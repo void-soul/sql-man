@@ -1,0 +1,41 @@
+{
+  "name": "sql-man",
+  "version": "1.0.0",
+  "description": "Generate ORM SQL for common databases",
+  "author": "void-soul",
+  "files": [
+    "index.js",
+    "sql-man.d.ts"
+  ],
+  "types": "sql-man.d.ts",
+  "scripts": {
+    "dist": "tsc",
+    "lint": "eslint **/*.ts"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git@github.com:void-soul/sql-man.git"
+  },
+  "homepage": "https://github.com/void-soul/sql-man",
+  "keywords": [
+    "sql",
+    "mysql",
+    "sqlite",
+    "orm"
+  ],
+  "bugs": {
+    "url": "https://github.com/void-soul/sql-man/issues"
+  },
+  "devDependencies": {
+    "@types/node": "13.7.0",
+    "@typescript-eslint/eslint-plugin": "2.21.0",
+    "@typescript-eslint/parser": "2.21.0",
+    "eslint": "6.8.0",
+    "eslint-plugin-import": "2.20.1",
+    "eslint-plugin-node": "11.0.0",
+    "eslint-plugin-promise": "4.2.1",
+    "eslint-plugin-standard": "4.0.1",
+    "tslib": "1.11.1",
+    "typescript": "3.8.3"
+  }
+}

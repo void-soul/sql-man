@@ -1,0 +1,228 @@
+declare module 'sql-man';
+declare module 'sql-man' {
+  /** 数据库配置文件,适用于实体类 */
+  function DbConfig(config: {
+    /** 对应的表名 */
+    tableName: string;
+    /** 表中的主键 */
+    ids?: string[];
+    /** 逻辑删除配置 */
+    logicDelete?: {
+      /** 逻辑删除状态名 */
+      stateFileName: string;
+      /** 逻辑删除时状态值 */
+      deleteState: string;
+    };
+  });
+
+  /** 总配置 */
+  interface SQLManConfig {
+    // sql文件路径
+    sqlDir?: string;
+  }
+
+  /** 配置选项 */
+  interface DbOption {
+    /** 跳过null、undefined字段,默认为false */
+    skipNullUndefined?: boolean;
+    /** 跳过空字符串,默认为false,当设置为true时,skipNullUndefined也将被设置为true */
+    skipEmptyString?: boolean;
+    /** 返回本次操作的表名,常用于分表操作;参数是DbConfig中配置的tableName;默认使用DbConfig中配置的tableName */
+    tableName?: (serviceTableName: string) => string;
+  }
+  /** 预处理sql */
+  interface PrepareSql {
+    /** sql语句,参数是 ? */
+    sql: string;
+    /** 配合sql使用的参数 */
+    params: any[];
+  }
+
+  /** 预处理sql类 */
+  class SqlMan<T> {
+    /**
+     * 插入
+     * @param {{[P in keyof T]?: T[P]}} data
+     * @param {DbOption} [option]
+     * @memberof SqlMan
+     */
+    insert(data: {[P in keyof T]?: T[P];}, option?: DbOption): PrepareSql;
+    /**
+     * 如果指定columns不存在数据库中，则插入数据
+     * @param {{[P in keyof T]?: T[P]}} data
+     * @param {(keyof T)[]} columns
+     * @param {DbOption} [option]
+     * @memberof SqlMan
+     */
+    insertIfNotExists(data: {[P in keyof T]?: T[P];}, columns: (keyof T)[], option?: DbOption): PrepareSql;
+    /**
+     * 插入或替换(按唯一约束判断且先删除再插入,因此性能较低于insertIfNotExists)
+     * @param {{[P in keyof T]?: T[P]}} data
+     * @param {DbOption} [option]
+     * @memberof SqlMan
+     */
+    replace(data: {[P in keyof T]?: T[P];}, option?: DbOption): PrepareSql;
+    /**
+     * 批量插入
+     * @param {{[P in keyof T]?: T[P]}[]} datas
+     * @param {DbOption} [option]
+     * @memberof SqlMan
+     */
+    insertBatch(datas: {[P in keyof T]?: T[P];}[], option?: DbOption): PrepareSql[];
+    /**
+     * 批量进行：如果指定列名不存在数据库中，则插入数据
+     * @param {{[P in keyof T]?: T[P]}} data
+     * @param {(keyof T)[]} columns
+     * @param {DbOption} [option]
+     * @memberof SqlMan
+     */
+    insertBatchIfNotExists(datas: {[P in keyof T]?: T[P];}[], columns: (keyof T)[], option?: DbOption): PrepareSql[];
+    /**
+     * 批量进行：插入或替换(按唯一约束判断且先删除再插入,因此性能较低于insertIfNotExists)
+     * @param {{[P in keyof T]?: T[P]}[]} datas
+     * @param {DbOption} [option]
+     * @memberof SqlMan
+     */
+    replaceBatch(datas: {[P in keyof T]?: T[P];}[], option?: DbOption): PrepareSql[];
+    /**
+     * 根据主键修改
+     * @param {{[P in keyof T]?: T[P]}} data
+     * @param {DbOption} [option]
+     * @memberof SqlMan
+     */
+    updateById(data: {[P in keyof T]?: T[P];}, option?: DbOption): PrepareSql;
+    /**
+     * 根据主键 批量修改
+     * @param {{[P in keyof T]?: T[P]}[]} datas
+     * @param {DbOption} [option]
+     * @memberof SqlMan
+     */
+    updateBatchById(datas: {[P in keyof T]?: T[P];}[], option?: DbOption): PrepareSql[];
+    /**
+     * 根据条件修改
+     * @param {{[P in keyof T]?: T[P]}} data
+     * @param {{[P in keyof T]?: T[P]}} where
+     * @param {DbOption} [option]
+     * @memberof SqlMan
+     */
+    updateBatch(data: {[P in keyof T]?: T[P];}, where: {[P in keyof T]?: T[P];}, option?: DbOption): PrepareSql;
+    /**
+     * 根据条件删除
+     * @param {{[P in keyof T]?: T[P]}} where
+     * @param {DbOption} [option]
+     * @memberof SqlMan
+     */
+    deleteBatch(where: {[P in keyof T]?: T[P];}, option?: DbOption): PrepareSql;
+    /**
+     * 根据单个主键删除
+     * 如果设置了逻辑删除,那么这里是一个update而不是delete
+     * @param {*} id
+     * @param {DbOption} [option]
+     * @memberof SqlMan
+     */
+    deleteById(id: any, option?: DbOption): PrepareSql;
+    /**
+     * 根据多个主键删除
+     * @param {{[P in keyof T]?: T[P]}} data
+     * @param {DbOption} [option]
+     * @memberof SqlMan
+     */
+    deleteByIdMuti(data: {[P in keyof T]?: T[P];}, option?: DbOption): PrepareSql;
+    /**
+     * 根据主键查询
+     * @param {*} id
+     * @param {DbOption} [option]
+     * @memberof SqlMan
+     */
+    selectById(id: any, option?: DbOption): PrepareSql;
+    /**
+     * 根据主键查询：多重主键
+     * @param {{[P in keyof T]?: T[P]}} data
+     * @param {DbOption} [option]
+     * @memberof SqlMan
+     */
+    selectByIdMuti(data: {[P in keyof T]?: T[P];}, option?: DbOption): PrepareSql;
+    /**
+     * 查询全部
+     * @param {DbOption} [option]
+     * @memberof SqlMan
+     */
+    all(option?: DbOption): PrepareSql;
+    /**
+     * 分页方式查询全部数据
+     * @param {number} start
+     * @param {number} size
+     * @param {DbOption} [option]
+     * @memberof SqlMan
+     */
+    allPage(start: number, size: number, option?: DbOption): PrepareSql;
+    /**
+     * 返回总条数
+     * @param {DbOption} [option]
+     * @memberof SqlMan
+     */
+    allCount(option?: DbOption): PrepareSql;
+    /**
+     * 根据模版查询所有数据,仅支持 = 操作符
+     * @param {{[P in keyof T]?: T[P]}} where
+     * @param {DbOption} [option]
+     * @memberof SqlMan
+     */
+    template(where: {[P in keyof T]?: T[P];}, option?: DbOption): PrepareSql;
+    /**
+     * 根据模版查询一条数据,仅支持 = 操作符
+     * @param {{[P in keyof T]?: T[P]}} where
+     * @param {DbOption} [option]
+     * @memberof SqlMan
+     */
+    templateOne(where: {[P in keyof T]?: T[P];}, option?: DbOption): PrepareSql;
+    /**
+     * 根据模版查询所有数据,仅支持 = 操作符,且分页
+     * @param {{[P in keyof T]?: T[P]}} where
+     * @param {number} start
+     * @param {number} size
+     * @param {DbOption} [option]
+     * @memberof SqlMan
+     */
+    templatePage(where: {[P in keyof T]?: T[P];}, start: number, size: number, option?: DbOption): PrepareSql;
+    /**
+     * 根据模版查询条数,仅支持 = 操作符
+     * @param {{[P in keyof T]?: T[P]}} where
+     * @param {DbOption} [option]
+     * @memberof SqlMan
+     */
+    templateCount(where: {[P in keyof T]?: T[P];}, option?: DbOption): PrepareSql;
+    /**
+     * 简单自定义查询
+     * @param  x
+     * @param {DbOption} [option]
+     * @memberof SqlMan
+    */
+    customQuery(x: {
+      where?: {[P in keyof T]?: T[P];};
+      columns?: (keyof T)[];
+      startRow?: number;
+      pageSize?: number;
+      orders?: [keyof T, "asc" | "desc"][];
+    }, option?: DbOption): PrepareSql;
+  }
+
+  /**
+   * 获取sql生成类
+   * 例：
+   *
+   * const userHelper = sqlMan<User>(User);
+   *
+   * const user = new User();
+   *
+   * const pre = userHelper.insert(user);
+   *
+   * console.log(pre.sql);
+   *
+   * console.log(pre.params);
+   * @template T
+   * @param {*} classtype
+   * @returns {SqlMan<T>}
+   */
+  function sqlMan<T>(classtype: any): SqlMan<T>;
+}
