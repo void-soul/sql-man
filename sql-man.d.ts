@@ -34,8 +34,76 @@ declare module 'sql-man' {
   interface PrepareSql {
     /** sql语句,参数是 ? */
     sql: string;
-    /** 配合sql使用的参数 */
-    params: any[];
+    /**
+     * 配合sql使用的参数
+     * 通过server的内置方式生成sql时,sql中参数类型是 ?, 参数值 是按顺序push的数组
+     * 通过自定义sql生成时,参数类型是 :key, 参数值 是json对象
+     *
+     * @type {(any[] | {[key: string]: any})}
+     * @memberof PrepareSql
+     */
+    params: any[] | {[key: string]: any};
+  }
+
+  /** 分页查询工具类 */
+  class PageQuery {
+    /** 添加参数 */
+    param(key: string, value: any): this;
+    /** 批量添加参数 */
+    params(param: {[key: string]: any}): this;
+    /** 设置排序语句 */
+    orderBy(orderby: string): this;
+    /** 设置第几页 */
+    pageNumber(page: number): this;
+    /** 设置每页记录数 */
+    pageSize(size: number): this;
+    /**
+     * 设置 分页语句是否由 sql语句自行管理?
+     * 自行管理时，参数会多出 limitStart\limitEnd\orderBy 3个
+     * @param {(string | boolean)} limitSelf
+     * @returns {this}
+     * @memberof PageQuery
+     */
+    limitSelf(limitSelf: string | boolean): this;
+    /** 返回查询列表使用的sql对象 */
+    list(): PrepareSql;
+    /** 返回查询条数使用的sql对象  */
+    count(): PrepareSql;
+  }
+  /** Lambda */
+  class LambdaQuery<T> {
+    constructor (table: string);
+    and(lambda: LambdaQuery<T>): this;
+    or(lambda: LambdaQuery<T>): this;
+    andEq(key: keyof T, value: T[keyof T]): this;
+    andNotEq(key: keyof T, value: T[keyof T]): this;
+    andGreat(key: keyof T, value: T[keyof T]): this;
+    andGreatEq(key: keyof T, value: T[keyof T]): this;
+    andLess(key: keyof T, value: T[keyof T]): this;
+    andLessEq(key: keyof T, value: T[keyof T]): this;
+    andLike(key: keyof T, value: T[keyof T]): this;
+    andNotLike(key: keyof T, value: T[keyof T]): this;
+    andLeftLike(key: keyof T, value: T[keyof T]): this;
+    andNotLeftLike(key: keyof T, value: T[keyof T]): this;
+    andRightLike(key: keyof T, value: T[keyof T]): this;
+    andNotRightLike(key: keyof T, value: T[keyof T]): this;
+    andIsNull(key: keyof T): this;
+    andIsNotNull(key: keyof T): this;
+    andIn(key: keyof T, value: Array<string | boolean | number>): this;
+    andNotIn(key: keyof T, value: Array<string | boolean | number>): this;
+    andBetween(key: keyof T, value1: T[keyof T], value2: T[keyof T]): this;
+    andNotBetween(key: keyof T, value1: T[keyof T], value2: T[keyof T]): this;
+    groupBy(key: keyof T): this;
+    updateColumn(key: keyof T, value: T[keyof T]): this;
+    asc(...keys: Array<keyof T>): this;
+    desc(...keys: Array<keyof T>): this;
+    limit(startRow: number, pageSize: number): this;
+    where(): string;
+    select(...columns: Array<keyof T>): PrepareSql;
+    one(...columns: Array<keyof T>): PrepareSql;
+    count(): PrepareSql;
+    update(data?: T): PrepareSql;
+    delete(): PrepareSql;
   }
 
   /** 预处理sql类 */
@@ -198,13 +266,29 @@ declare module 'sql-man' {
      * @param {DbOption} [option]
      * @memberof SqlMan
     */
-    customQuery(x: {
-      where?: {[P in keyof T]?: T[P];};
-      columns?: (keyof T)[];
-      startRow?: number;
-      pageSize?: number;
-      orders?: [keyof T, "asc" | "desc"][];
-    }, option?: DbOption): PrepareSql;
+    customQuery(x: {where?: {[P in keyof T]?: T[P];}; columns?: (keyof T)[]; startRow?: number; pageSize?: number; orders?: [keyof T, "asc" | "desc"][]}, option?: DbOption): PrepareSql;
+    /**
+     * 创建分页查询工具
+     * @param {string} sqlid
+     * @returns {PageQuery<T>}
+     * @memberof SqlMan
+     */
+    pageQuery(sqlid: string): PageQuery;
+    /**
+     * 创建lambda查询工具
+     * @template L
+     * @param {DbOption} [option]
+     * @returns {LambdaQuery<L>}
+     * @memberof SqlMan
+     */
+    lambdaQuery<L>(option?: DbOption): LambdaQuery<L>;
+    /**
+     * 创建lambda查询工具
+     * @param {DbOption} [option]
+     * @returns {LambdaQuery<T>}
+     * @memberof SqlMan
+     */
+    lambdaQueryMe(option?: DbOption): LambdaQuery<T>;
   }
 
   /**
@@ -225,4 +309,16 @@ declare module 'sql-man' {
    * @returns {SqlMan<T>}
    */
   function sqlMan<T>(classtype: any): SqlMan<T>;
+
+  /**
+   * 根据sqlid 返回sql预执行对象
+   *
+   * @param {string} sqlid
+   * @param {{
+   *     [key: string]: any;
+   *   }} params
+   * @param {(boolean)} [isPage]
+   * @returns {PrepareSql}
+   */
+  function getSqlById(sqlid: string, params: {[key: string]: any}, isPage?: boolean): PrepareSql;
 }

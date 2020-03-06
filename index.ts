@@ -1,6 +1,9 @@
 import * as  fs from 'fs';
-import {join} from 'path';
+import {join, basename, extname} from 'path';
 
+const _tableName = Symbol('tableName');
+const _ids = Symbol('ids');
+const _logicDelete = Symbol('logicDelete');
 
 const emptyString = (source: any, dealEmptyString = true): boolean => {
   return (
@@ -33,15 +36,14 @@ interface DbOption {
 }
 interface PrepareSql {
   sql: string;
-  params: any[];
+  params: any[] | {[key: string]: any};
 }
-
-const SKIP_KEYS = ['__tableName', '__ids', '__logicDelete'];
 
 const config = {
   maxDeal: 500
 } as SQLManConfig;
-const sqlCache: {[key: string]: (...args: any[]) => string} = {};
+
+const sqlCache: {[key: string]: (param: {[k: string]: any}, isPage?: boolean) => string} = {};
 const rootDir = join(__dirname, '..', '..');
 const configFis = join(rootDir, '.sqlman.js');
 if (fs.existsSync(configFis)) {
@@ -53,8 +55,11 @@ if (fs.existsSync(configFis)) {
     config.sqlDir = join(rootDir, config.sqlDir);
     const sqlFis = fs.readdirSync(config.sqlDir);
     for (const modeName of sqlFis) {
-
-      const obj = require(join(config.sqlDir, modeName));
+      const name = basename(modeName, extname(modeName));
+      const obj = require(join(config.sqlDir, name)) as {[key: string]: (param: {[k: string]: any}, isPage?: boolean) => string};
+      for (const [key, fn] of Object.entries(obj)) {
+        sqlCache[`${ name }.${ key }`] = fn;
+      }
     }
   }
 }
@@ -92,87 +97,397 @@ function defOption() {
     };
   };
 }
-const _pageNumber = Symbol('pageNumber');
-const _pageSize = Symbol('pageSize');
-const _orderBy = Symbol('orderBy');
-const _orderMongo = Symbol('_orderMongo');
-const _param = Symbol('param');
-const _limitSelf = Symbol('limitSelf');
 
-class PageQuery<T>{
-  list: T[];
-  totalPage: number;
-  totalRow: number;
-  private [_limitSelf] = false;
-  private [_pageNumber] = 1;
-  private [_pageSize] = 0;
-  private [_orderBy]: string;
-  private [_orderMongo]: {[P in keyof T]: 1 | -1};
-  private [_param]: {[key: string]: any} = {};
-  private search: (
-    param: {[key: string]: any},
-    pageSize: number,
-    pageNumber: number,
-    limitSelf: boolean,
-    query: PageQuery<T>,
-    orderBy?: string,
-    orderMongo?: {[P in keyof T]: 1 | -1},
-  ) => Promise<void>;
-  constructor (
-    search: (
-      param: {[key: string]: any},
-      pageSize: number,
-      pageNumber: number,
-      limitSelf: boolean,
-      query: PageQuery<T>,
-      orderBy?: string,
-      orderMongo?: {[P in keyof T]: 1 | -1},
-    ) => Promise<void>
-  ) {
-    this.search = search;
+class PageQuery {
+  private _limitSelf = false;
+  private _pageNumber = 1;
+  private _pageSize = 0;
+  private _orderBy: string;
+  private _param: {[key: string]: any} = {};
+  private sqlSource: (...args: any[]) => string;
+
+  constructor (id: string) {
+    this.sqlSource = sqlCache[id];
+    throwIf(!this.sqlSource, `指定的语句${ id }不存在!`);
   }
 
   param(key: string, value: any): this {
-    this[_param][key] = value;
-    return this;
-  }
-  params(param: {[key: string]: any}): this {
-    Object.assign(this[_param], param);
-    return this;
-  }
-  orderBy(orderby: string): this {
-    if (orderby && !orderby.includes('undefined')) {
-      this[_orderBy] = orderby;
-    }
-    return this;
-  }
-  orderByMongo(name: keyof T, type: 1 | -1): this {
-    this[_orderMongo][name] = type;
-    return this;
-  }
-  pageNumber(page: number): this {
-    this[_pageNumber] = page;
-    return this;
-  }
-  pageSize(size: number): this {
-    this[_pageSize] = size;
-    return this;
-  }
-  limitSelf(limitSelf: boolean | string): this {
-    this[_limitSelf] = limitSelf === true || limitSelf === 'true';
+    this._param[key] = value;
     return this;
   }
 
-  async select(): Promise<this> {
-    await this.search(
-      this[_param],
-      this[_pageSize],
-      this[_pageNumber],
-      this[_limitSelf],
-      this,
-      this[_orderBy],
-      this[_orderMongo]
+  params(param: {[key: string]: any}): this {
+    Object.assign(this._param, param);
+    return this;
+  }
+
+  orderBy(orderby: string): this {
+    if (orderby && !orderby.includes('undefined')) {
+      this._orderBy = orderby;
+    }
+    return this;
+  }
+  pageNumber(page: number): this {
+    this._pageNumber = page;
+    return this;
+  }
+  pageSize(size: number): this {
+    this._pageSize = size;
+    return this;
+  }
+  limitSelf(limitSelf: boolean | string): this {
+    this._limitSelf = limitSelf === true || limitSelf === 'true';
+    return this;
+  }
+
+  list(): PrepareSql {
+    if (this._limitSelf === false) {
+      const sqls = [
+        `SELECT _a.* FROM (`,
+        this.sqlSource(this._param, false),
+        ') _a'
+      ];
+      if (this._orderBy) {
+        sqls.push('ORDER BY');
+        sqls.push(this._orderBy);
+      }
+      if (this._pageSize > 0) {
+        sqls.push('LIMIT');
+        sqls.push(`${ (this._pageNumber - 1) * this._pageSize }`);
+        sqls.push(`${ this._pageSize }`);
+      }
+      return {
+        sql: sqls.join(' '),
+        params: this._param
+      };
+    } else {
+      const params = {
+        ...this._param,
+        limitStart: (this._pageNumber - 1) * this._pageSize,
+        limitEnd: this._pageSize,
+        orderBy: this._orderBy
+      };
+      return {
+        sql: this.sqlSource(params, false),
+        params
+      };
+    }
+  }
+
+  count(): PrepareSql {
+    return {
+      sql: this.sqlSource(this._param, true),
+      params: this._param
+    };
+  }
+}
+
+class LambdaQuery<T> {
+  private andQuerys: LambdaQuery<T>[] = [];
+  private orQuerys: LambdaQuery<T>[] = [];
+  private condition: string[] = [];
+  private group: (keyof T)[] = [];
+  private order: string[] = [];
+  private param: {[key: string]: any} = {};
+  private index = 0;
+  private startRow = 0;
+  private pageSize = 0;
+  private table: string;
+  private updateData?: T;
+  constructor (table: string) {
+    this.table = table;
+  }
+  and(lambda: LambdaQuery<T>): this {
+    this.andQuerys.push(lambda);
+    return this;
+  }
+  or(lambda: LambdaQuery<T>): this {
+    this.orQuerys.push(lambda);
+    return this;
+  }
+  andEq(
+    key: keyof T,
+    value: T[keyof T]
+  ): this {
+    return this.common(key, value, '=');
+  }
+  andNotEq(
+    key: keyof T,
+    value: T[keyof T]
+  ): this {
+    return this.common(key, value, '<>');
+  }
+  andGreat(
+    key: keyof T,
+    value: T[keyof T]
+  ): this {
+    return this.common(key, value, '>');
+  }
+  andGreatEq(
+    key: keyof T,
+    value: T[keyof T]
+  ): this {
+    return this.common(key, value, '>=');
+  }
+  andLess(
+    key: keyof T,
+    value: T[keyof T]
+  ): this {
+    return this.common(key, value, '<');
+  }
+  andLessEq(
+    key: keyof T,
+    value: T[keyof T]
+  ): this {
+    return this.common(key, value, '<=');
+  }
+  andLike(
+    key: keyof T,
+    value: T[keyof T]
+  ): this {
+    return this.like(key, value);
+  }
+  andNotLike(
+    key: keyof T,
+    value: T[keyof T]
+  ): this {
+    return this.like(key, value, 'NOT');
+  }
+  andLeftLike(
+    key: keyof T,
+    value: T[keyof T]
+  ): this {
+    return this.like(key, value, '', '%', '');
+  }
+  andNotLeftLike(
+    key: keyof T,
+    value: T[keyof T]
+  ): this {
+    return this.like(key, value, 'NOT', '%', '');
+  }
+  andRightLike(
+    key: keyof T,
+    value: T[keyof T]
+  ): this {
+    return this.like(key, value, '', '', '%');
+  }
+  andNotRightLike(
+    key: keyof T,
+    value: T[keyof T]
+  ): this {
+    return this.like(key, value, 'NOT', '', '%');
+  }
+  andIsNull(key: keyof T): this {
+    return this.nil(key);
+  }
+  andIsNotNull(key: keyof T): this {
+    return this.nil(key, 'NOT');
+  }
+  andIn(key: keyof T, value: T[keyof T][]): this {
+    return this.commonIn(key, value);
+  }
+  andNotIn(key: keyof T, value: T[keyof T][]): this {
+    return this.commonIn(key, value, 'NOT');
+  }
+  andBetween(
+    key: keyof T,
+    value1: T[keyof T],
+    value2: T[keyof T]
+  ): this {
+    return this.between(key, value1, value2);
+  }
+  andNotBetween(
+    key: keyof T,
+    value1: T[keyof T],
+    value2: T[keyof T]
+  ): this {
+    return this.between(key, value1, value2, 'NOT');
+  }
+
+  groupBy(key: keyof T): this {
+    this.group.push(key);
+    return this;
+  }
+
+  asc(...keys: (keyof T)[]): this {
+    for (const key of keys) {
+      this.order.push(`${ key } ASC`);
+    }
+    return this;
+  }
+
+  desc(...keys: (keyof T)[]): this {
+    for (const key of keys) {
+      this.order.push(`${ key } DESC`);
+    }
+    return this;
+  }
+
+  limit(startRow: number, pageSize: number): this {
+    this.startRow = startRow;
+    this.pageSize = pageSize;
+    return this;
+  }
+  where(): string {
+    return this.condition.join(' ');
+  }
+  updateColumn(key: keyof T, value: T[keyof T]) {
+    if (!this.updateData) {
+      this.updateData = {} as T;
+    }
+    this.updateData[key] = value;
+    return this;
+  }
+  select(...columns: (keyof T)[]): PrepareSql {
+    let sql = `SELECT ${
+      columns && columns.length > 0 ? columns.join(',') : '*'
+      } FROM ${ this.table } `;
+    sql += `WHERE 1 = 1 ${ this.where() } `;
+    if (this.orQuerys.length > 0) {
+      for (const query of this.orQuerys) {
+        sql += ` OR (${ query.where() }) `;
+      }
+    }
+    if (this.andQuerys.length > 0) {
+      for (const query of this.andQuerys) {
+        sql += ` AND (${ query.where() }) `;
+      }
+    }
+    if (this.group.length > 0) {
+      sql += `GROUP BY ${ this.group.join(',') } `;
+    }
+    if (this.order.length > 0) {
+      sql += `ORDER BY ${ this.order.join(',') } `;
+    }
+    if (this.pageSize > 0) {
+      sql += `LIMIT ${ this.startRow }, ${ this.pageSize }`;
+    }
+    return {
+      sql,
+      params: this.param
+    };
+  }
+  count(): PrepareSql {
+    let sql = `SELECT COUNT(1) FROM ${ this.table } `;
+    sql += `WHERE 1 = 1 ${ this.where() } `;
+    if (this.orQuerys.length > 0) {
+      for (const query of this.orQuerys) {
+        sql += ` OR (${ query.where() }) `;
+      }
+    }
+    if (this.andQuerys.length > 0) {
+      for (const query of this.andQuerys) {
+        sql += ` AND (${ query.where() }) `;
+      }
+    }
+    if (this.group.length > 0) {
+      sql += `GROUP by ${ this.group.join(',') } `;
+    }
+    return {
+      sql,
+      params: this.param
+    };
+  }
+  update(data?: T): PrepareSql {
+    if (!data) {
+      data = {} as T;
+    }
+    if (this.updateData) {
+      Object.assign(data, this.updateData);
+    }
+    let sql = `UPDATE ${ this.table } SET `;
+    const sets = new Array<string>();
+    for (const key in data) {
+      if ((data as any).hasOwnProperty(key)) {
+        sets.push(` ${ key } = :${ key } `);
+      }
+    }
+    sql += `${ sets.join(',') } WHERE 1 = 1 ${ this.where() } `;
+    if (this.orQuerys.length > 0) {
+      for (const query of this.orQuerys) {
+        sql += ` OR (${ query.where() }) `;
+      }
+    }
+    if (this.andQuerys.length > 0) {
+      for (const query of this.andQuerys) {
+        sql += ` AND (${ query.where() }) `;
+      }
+    }
+    return {
+      sql,
+      params: {
+        ...this.param,
+        ...data
+      }
+    };
+  }
+  delete(): PrepareSql {
+    let sql = `DELETE FROM ${ this.table }  WHERE 1 = 1 ${ this.where() } `;
+    if (this.orQuerys.length > 0) {
+      for (const query of this.orQuerys) {
+        sql += ` OR (${ query.where() }) `;
+      }
+    }
+    if (this.andQuerys.length > 0) {
+      for (const query of this.andQuerys) {
+        sql += ` AND (${ query.where() }) `;
+      }
+    }
+    return {
+      sql,
+      params: this.param
+    };
+  }
+  private nil(key: keyof T, not = ''): this {
+    this.condition.push(`AND ${ key } is ${ not } null`);
+    return this;
+  }
+  private like(
+    key: keyof T,
+    value: any,
+    not = '',
+    left = '%',
+    right = '%'
+  ): this {
+    const pkey = `${ key }_${ this.index++ }`;
+    this.condition.push(
+      `AND ${ key } ${ not } like concat('${ left }', :${ pkey }, '${ right }') `
     );
+    this.param[pkey] = value;
+    return this;
+  }
+  private between(
+    key: keyof T,
+    value1: any,
+    value2: any,
+    not = ''
+  ): this {
+    const pkey1 = `${ key }_${ this.index++ }`;
+    const pkey2 = `${ key }_${ this.index++ }`;
+    this.condition.push(`AND ${ key } ${ not } BETWEEN :${ pkey1 } AND :${ pkey2 }`);
+    this.param[pkey1] = value1;
+    this.param[pkey2] = value2;
+    return this;
+  }
+  private common(
+    key: keyof T,
+    value: any,
+    op: string,
+    not = ''
+  ) {
+    const pkey = `${ key }_${ this.index++ }`;
+    this.condition.push(`AND ${ key } ${ not } ${ op } :${ pkey } `);
+    this.param[pkey] = value;
+    return this;
+  }
+  private commonIn(
+    key: keyof T,
+    value: any,
+    not = ''
+  ) {
+    const pkey = `${ key }_${ this.index++ }`;
+    this.condition.push(`AND ${ key } ${ not } IN (:${ pkey }) `);
+    this.param[pkey] = value;
     return this;
   }
 }
@@ -185,18 +500,16 @@ class SqlMan<T> {
   private deleteState?: string;
 
   constructor (classtype: any) {
-    this.tableName = classtype.__tableName;
+    this.tableName = classtype[_tableName];
     throwIf(!this.tableName, '没有定义数据库相关配置,请在实体类上添加DbConfig注解');
-    this.idNames = classtype.__ids;
+    this.idNames = classtype[_ids];
     this.keys = [];
     for (const key in classtype) {
-      if (!SKIP_KEYS.includes(key)) {
-        this.keys.push(key as any);
-      }
+      this.keys.push(key as any);
     }
-    if (classtype.__logicDelete) {
-      this.stateFileName = classtype.__logicDelete.stateFileName;
-      this.deleteState = classtype.__logicDelete.deleteState;
+    if (classtype[_logicDelete]) {
+      this.stateFileName = classtype[_logicDelete].stateFileName;
+      this.deleteState = classtype[_logicDelete].deleteState;
     }
   }
 
@@ -291,7 +604,7 @@ class SqlMan<T> {
       return [];
     }
     const results = new Array<PrepareSql>();
-    const length = Math.ceil(datas.length / config.maxDeal);
+    const length = Math.ceil(datas.length / config.maxDeal!);
     const tableName = option!.tableName!(this.tableName);
     const keys = Object.keys(datas[0]);
     const values = '(' + new Array<string>(keys.length).fill('?').join(',') + ')';
@@ -299,7 +612,7 @@ class SqlMan<T> {
     const keyStr = keys.join(',');
 
     for (let i = 0; i < length; i++) {
-      const target = this.filterEmptyAndTransients(datas.slice(i * config.maxDeal, (i + 1) * config.maxDeal), option!.skipNullUndefined, option!.skipNullUndefined);
+      const target = this.filterEmptyAndTransients(datas.slice(i * config.maxDeal!, (i + 1) * config.maxDeal!), option!.skipNullUndefined, option!.skipNullUndefined);
 
       const sql = [
         start,
@@ -330,7 +643,7 @@ class SqlMan<T> {
       return [];
     }
     const results = new Array<PrepareSql>();
-    const length = Math.ceil(datas.length / config.maxDeal);
+    const length = Math.ceil(datas.length / config.maxDeal!);
     const tableName = option!.tableName!(this.tableName);
     const keys = Object.keys(datas[0]);
     const values = [
@@ -343,7 +656,7 @@ class SqlMan<T> {
     const start = `INSERT INTO ${ tableName } ( ${ keys.join(',') } )`;
 
     for (let i = 0; i < length; i++) {
-      const target = this.filterEmptyAndTransients(datas.slice(i * config.maxDeal, (i + 1) * config.maxDeal), option!.skipNullUndefined, option!.skipNullUndefined);
+      const target = this.filterEmptyAndTransients(datas.slice(i * config.maxDeal!, (i + 1) * config.maxDeal!), option!.skipNullUndefined, option!.skipNullUndefined);
 
       const sql = [
         start,
@@ -375,7 +688,7 @@ class SqlMan<T> {
       return [];
     }
     const results = new Array<PrepareSql>();
-    const length = Math.ceil(datas.length / config.maxDeal);
+    const length = Math.ceil(datas.length / config.maxDeal!);
     const tableName = option!.tableName!(this.tableName);
     const keys = Object.keys(datas[0]);
     const values = '(' + new Array<string>(keys.length).fill('?').join(',') + ')';
@@ -383,7 +696,7 @@ class SqlMan<T> {
     const keyStr = keys.join(',');
 
     for (let i = 0; i < length; i++) {
-      const target = this.filterEmptyAndTransients(datas.slice(i * config.maxDeal, (i + 1) * config.maxDeal), option!.skipNullUndefined, option!.skipNullUndefined);
+      const target = this.filterEmptyAndTransients(datas.slice(i * config.maxDeal!, (i + 1) * config.maxDeal!), option!.skipNullUndefined, option!.skipNullUndefined);
 
       const sql = [
         start,
@@ -448,14 +761,14 @@ class SqlMan<T> {
     }
 
     const results = new Array<PrepareSql>();
-    const length = Math.ceil(datas.length / config.maxDeal);
+    const length = Math.ceil(datas.length / config.maxDeal!);
     const tableName = option!.tableName!(this.tableName);
     const keys = Object.keys(datas[0]);
     const start = `UPDATE ${ tableName } SET `;
     const caseStr = `WHEN ${ this.idNames.flatMap(item => `${ item } = ?`).join(' AND ') } THEN ?`;
 
     for (let i = 0; i < length; i++) {
-      const target = this.filterEmptyAndTransients(datas.slice(i * config.maxDeal, (i + 1) * config.maxDeal), option!.skipNullUndefined, option!.skipNullUndefined);
+      const target = this.filterEmptyAndTransients(datas.slice(i * config.maxDeal!, (i + 1) * config.maxDeal!), option!.skipNullUndefined, option!.skipNullUndefined);
       const realLengt = target.length;
       const params = new Array<any>();
       const sql = [
@@ -850,80 +1163,35 @@ class SqlMan<T> {
     };
   }
 
-  pageQuery(sqlid: string, transaction: any = true): PageQuery<L> {
-    const source: SQLSource = this.app.getSql(sqlid);
-    return new PageQuery(
-      async (
-        param: Empty,
-        pageSize: number,
-        pageNumber: number,
-        limitSelf: boolean,
-        query: PageQuery<L>,
-        orderBy?: string
-      ) => {
-        let buildParam: Build;
-        let sql: string;
-        if (limitSelf === false) {
-          buildParam = new Build(false, param);
-          sql = `SELECT _a.* FROM (${ Mustache.render(
-            source.template,
-            buildParam,
-            this.app.getSqlFn()
-          ) }) _a `;
-          if (orderBy) {
-            sql = `${ sql } ORDER BY ${ orderBy }`;
-          }
-          if (pageSize > 0) {
-            sql = `${ sql } LIMIT ${ calc(pageNumber)
-              .sub(1)
-              .mul(pageSize)
-              .over() }, ${ pageSize }`;
-          }
-          if (pageSize > 0) {
-            const buildParamPage = new Build(true, param);
-            const sqlPage = Mustache.render(source.template, buildParamPage, this.app.getSqlFn());
-            const totalRow = await this.querySingelRowSingelColumnBySql<number>(
-              sqlPage,
-              param,
-              transaction
-            );
-            query.totalRow = totalRow || 0;
-            query.totalPage = calc(query.totalRow)
-              .add(pageSize - 1)
-              .div(pageSize)
-              .round(0, 2)
-              .over();
-          }
-        } else {
-          Object.assign(param, {
-            limitStart: calc(pageNumber)
-              .sub(1)
-              .mul(pageSize)
-              .over(),
-            limitEnd: calc(pageSize).over(),
-            orderBy
-          });
-          buildParam = new Build(false, param);
-          sql = Mustache.render(source.template, buildParam, this.app.getSqlFn());
-          if (pageSize > 0) {
-            const buildParamPage = new Build(true, param);
-            const sqlPage = Mustache.render(source.template, buildParamPage, this.app.getSqlFn());
-            const totalRow = await this.querySingelRowSingelColumnBySql<number>(
-              sqlPage,
-              param,
-              transaction
-            );
-            query.totalRow = totalRow || 0;
-            query.totalPage = calc(query.totalRow)
-              .add(pageSize - 1)
-              .div(pageSize)
-              .round(0, 2)
-              .over();
-          }
-        }
-        query.list = await this.queryMutiRowMutiColumnBySql<L>(sql, param, transaction);
-      }
-    );
+  /**
+   * 创建分页查询工具
+   * @param {string} sqlid
+   * @returns {PageQuery<T>}
+   * @memberof SqlMan
+   */
+  pageQuery(sqlid: string): PageQuery {
+    return new PageQuery(sqlid);
+  }
+  /**
+   * 创建lambda查询工具
+   * @template L
+   * @param {DbOption} [option]
+   * @returns {LambdaQuery<L>}
+   * @memberof SqlMan
+   */
+  @defOption()
+  lambdaQuery<L>(option?: DbOption): LambdaQuery<L> {
+    return new LambdaQuery<L>(option!.tableName!(this.tableName));
+  }
+  /**
+   * 创建lambda查询工具
+   * @param {DbOption} [option]
+   * @returns {LambdaQuery<T>}
+   * @memberof SqlMan
+   */
+  @defOption()
+  lambdaQueryMe(option?: DbOption): LambdaQuery<T> {
+    return this.lambdaQuery<T>(option);
   }
 
   /**
@@ -963,7 +1231,6 @@ class SqlMan<T> {
   }
 }
 
-
 const cache: {[key: string]: SqlMan<any>} = {};
 export const sqlMan = function <T>(classtype: any): SqlMan<T> {
   const key = classtype.toString();
@@ -971,6 +1238,14 @@ export const sqlMan = function <T>(classtype: any): SqlMan<T> {
     cache[key] = new SqlMan<T>(classtype);
   }
   return cache[key];
+};
+export const getSqlById = function (sqlid: string, params: {[key: string]: any}, isPage?: boolean): PrepareSql {
+  const sqlSource = sqlCache[sqlid];
+  throwIf(!sqlSource, `指定的语句${ sqlid }不存在!`);
+  return {
+    sql: sqlSource(params, isPage),
+    params
+  };
 };
 
 export const DbConfig = (config: {
@@ -981,11 +1256,24 @@ export const DbConfig = (config: {
     deleteState: string;
   };
 }) => <T extends {new(...args: any[]): {}}>(constructor: T) => {
-  constructor['__tableName'] = config.tableName;
-  constructor['__ids'] = config.ids;
-  constructor['__logicDelete'] = config.logicDelete;
+  Object.defineProperty(constructor, _tableName, {
+    enumerable: false,
+    configurable: false,
+    writable: false,
+    value: config.tableName
+  });
+  Object.defineProperty(constructor, _ids, {
+    enumerable: false,
+    configurable: false,
+    writable: false,
+    value: config.ids
+  });
+  Object.defineProperty(constructor, _logicDelete, {
+    enumerable: false,
+    configurable: false,
+    writable: false,
+    value: config.logicDelete
+  });
   return class extends constructor {
   };
 };
-
-
