@@ -1,26 +1,10 @@
 declare module 'sql-man';
 declare module 'sql-man' {
-  /** 数据库配置文件,适用于实体类 */
-  function DbConfig(config: {
-    /** 对应的表名 */
-    tableName: string;
-    /** 表中的主键 */
-    ids?: string[];
-    /** 逻辑删除配置 */
-    logicDelete?: {
-      /** 逻辑删除状态名 */
-      stateFileName: string;
-      /** 逻辑删除时状态值 */
-      deleteState: string;
-    };
-  });
-
   /** 总配置 */
   interface SQLManConfig {
     // sql文件路径
     sqlDir?: string;
   }
-
   /** 配置选项 */
   interface DbOption {
     /** 跳过null、undefined字段,默认为false */
@@ -44,7 +28,11 @@ declare module 'sql-man' {
      */
     params: any[] | {[key: string]: any};
   }
-
+  /** sql语句缓存集 */
+  class SqlCache {
+    /** 从这个集合中，加载并编译返回预查询对象 */
+    loadSqlById(sqlid: string, params: {[key: string]: any}, isPage?: boolean | undefined): PrepareSql;
+  }
   /** 分页查询工具类 */
   class PageQuery {
     /** 添加参数 */
@@ -105,7 +93,6 @@ declare module 'sql-man' {
     update(data?: T): PrepareSql;
     delete(): PrepareSql;
   }
-
   /** 预处理sql类 */
   class SqlMan<T> {
     /**
@@ -290,9 +277,23 @@ declare module 'sql-man' {
      */
     lambdaQueryMe(option?: DbOption): LambdaQuery<T>;
   }
-
+  /** 数据库配置文件,适用于实体类 */
+  function DbConfig(config: {
+    /** 对应的表名 */
+    tableName: string;
+    /** 表中的主键 */
+    ids?: string[];
+    /** 逻辑删除配置 */
+    logicDelete?: {
+      /** 逻辑删除状态名 */
+      stateFileName: string;
+      /** 逻辑删除时状态值 */
+      deleteState: string;
+    };
+  });
   /**
-   * 获取sql生成类
+   * 获取sql生成类,如果不存在就创建一个新的并返回
+   * 要求对应的实体类添加注解 @DbConfig
    * 例：
    *
    * const userHelper = sqlMan<User>(User);
@@ -309,16 +310,17 @@ declare module 'sql-man' {
    * @returns {SqlMan<T>}
    */
   function sqlMan<T>(classtype: any): SqlMan<T>;
-
   /**
-   * 根据sqlid 返回sql预执行对象
-   *
-   * @param {string} sqlid
-   * @param {{
-   *     [key: string]: any;
-   *   }} params
-   * @param {(boolean)} [isPage]
-   * @returns {PrepareSql}
+   * 建立一个新的sql语句缓存集
+   * 该缓存集会加载到内存中,之后可通过name获取到此缓存集
+   * @param {string} name
+   * @param {string} sqlDir
    */
-  function getSqlById(sqlid: string, params: {[key: string]: any}, isPage?: boolean): PrepareSql;
+  function createSqlCache(name: string, sqlDir: string): void;
+  /**
+   * 获取sql语句缓存集,name不传时,会返回通过 .sqlman.js 配置的缓存集
+   * @param {(string | undefined)} [name]
+   * @returns {SqlCache}
+   */
+  function getSqlCache(name?: string | undefined): SqlCache;
 }

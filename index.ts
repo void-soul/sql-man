@@ -38,12 +38,49 @@ interface PrepareSql {
   sql: string;
   params: any[] | {[key: string]: any};
 }
+class SqlCache {
+  private cache: {[key: string]: (param: {[k: string]: any}, isPage?: boolean) => string} = {};
+  constructor (sqlDir: string) {
+    const sqlFis = fs.readdirSync(sqlDir);
+    for (const modeName of sqlFis) {
+      const name = basename(modeName, extname(modeName));
+      const obj = require(join(sqlDir, name)) as {[key: string]: (param: {[k: string]: any}, isPage?: boolean) => string};
+      for (const [key, fn] of Object.entries(obj)) {
+        this.cache[`${ name }.${ key }`] = fn;
+      }
+    }
+  }
+  loadSqlById(sqlid: string, params: {[key: string]: any}, isPage?: boolean): PrepareSql {
+    const sqlSource = this.cache[sqlid];
+    throwIf(!sqlSource, `指定的语句${ sqlid }不存在!`);
+    return {
+      sql: sqlSource(params, isPage),
+      params
+    };
+  }
+  loadSqlSourceFnById(sqlid: string): (param: {[k: string]: any}, isPage?: boolean) => string {
+    const sqlSource = this.cache[sqlid];
+    throwIf(!sqlSource, `指定的语句${ sqlid }不存在!`);
+    return sqlSource;
+  }
+}
 
 const config = {
   maxDeal: 500
 } as SQLManConfig;
-
-const sqlCache: {[key: string]: (param: {[k: string]: any}, isPage?: boolean) => string} = {};
+const defCacheName = 'DEF_SQL_MAN_CACHE';
+const sqlCaches: {[name: string]: SqlCache} = {};
+/** 建立一个新的sql语句缓存集 */
+export const createSqlCache = function (name: string, sqlDir: string): void {
+  sqlCaches[name] = new SqlCache(sqlDir);
+};
+/** 获取sql语句缓存集 */
+export const getSqlCache = function (name?: string): SqlCache {
+  const _name = name || defCacheName;
+  const cache = sqlCaches[_name];
+  throwIf(!cache, `指定的缓存${ _name }不存在!`);
+  return cache;
+};
 const rootDir = join(__dirname, '..', '..');
 const configFis = join(rootDir, '.sqlman.js');
 if (fs.existsSync(configFis)) {
@@ -53,14 +90,7 @@ if (fs.existsSync(configFis)) {
   );
   if (config.sqlDir) {
     config.sqlDir = join(rootDir, config.sqlDir);
-    const sqlFis = fs.readdirSync(config.sqlDir);
-    for (const modeName of sqlFis) {
-      const name = basename(modeName, extname(modeName));
-      const obj = require(join(config.sqlDir, name)) as {[key: string]: (param: {[k: string]: any}, isPage?: boolean) => string};
-      for (const [key, fn] of Object.entries(obj)) {
-        sqlCache[`${ name }.${ key }`] = fn;
-      }
-    }
+    createSqlCache(defCacheName, config.sqlDir);
   }
 }
 
@@ -106,9 +136,8 @@ class PageQuery {
   private _param: {[key: string]: any} = {};
   private sqlSource: (...args: any[]) => string;
 
-  constructor (id: string) {
-    this.sqlSource = sqlCache[id];
-    throwIf(!this.sqlSource, `指定的语句${ id }不存在!`);
+  constructor (sqlSource: (...args: any[]) => string) {
+    this.sqlSource = sqlSource;
   }
 
   param(key: string, value: any): this {
@@ -498,12 +527,14 @@ class SqlMan<T> {
   private keys: (keyof T)[];
   private stateFileName?: string;
   private deleteState?: string;
+  private sqlCacheName?: string;
 
-  constructor (classtype: any) {
+  constructor (classtype: any, sqlCacheName?: string) {
     this.tableName = classtype[_tableName];
     throwIf(!this.tableName, '没有定义数据库相关配置,请在实体类上添加DbConfig注解');
     this.idNames = classtype[_ids];
     this.keys = [];
+    this.sqlCacheName = sqlCacheName;
     for (const key in classtype) {
       this.keys.push(key as any);
     }
@@ -1170,7 +1201,7 @@ class SqlMan<T> {
    * @memberof SqlMan
    */
   pageQuery(sqlid: string): PageQuery {
-    return new PageQuery(sqlid);
+    return new PageQuery(getSqlCache(this.sqlCacheName).loadSqlSourceFnById(sqlid));
   }
   /**
    * 创建lambda查询工具
@@ -1230,7 +1261,7 @@ class SqlMan<T> {
     return result;
   }
 }
-
+/** 公共的对象缓存 */
 const cache: {[key: string]: SqlMan<any>} = {};
 export const sqlMan = function <T>(classtype: any): SqlMan<T> {
   const key = classtype.toString();
@@ -1239,15 +1270,6 @@ export const sqlMan = function <T>(classtype: any): SqlMan<T> {
   }
   return cache[key];
 };
-export const getSqlById = function (sqlid: string, params: {[key: string]: any}, isPage?: boolean): PrepareSql {
-  const sqlSource = sqlCache[sqlid];
-  throwIf(!sqlSource, `指定的语句${ sqlid }不存在!`);
-  return {
-    sql: sqlSource(params, isPage),
-    params
-  };
-};
-
 export const DbConfig = (config: {
   tableName: string;
   ids?: string[];
