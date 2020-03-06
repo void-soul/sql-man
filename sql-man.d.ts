@@ -1,5 +1,4 @@
-declare module 'sql-man';
-declare module 'sql-man' {
+declare namespace SqlMan {
   /** 总配置 */
   interface SQLManConfig {
     // sql文件路径
@@ -324,3 +323,4 @@ declare module 'sql-man' {
    */
   function getSqlCache(name?: string | undefined): SqlCache;
 }
+export = SqlMan;

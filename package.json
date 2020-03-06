@@ -1,6 +1,6 @@
 {
   "name": "sql-man",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Generate ORM SQL for common databases",
   "keywords": [
     "sql",
