@@ -5,16 +5,6 @@ const _tableName = Symbol('tableName');
 const _ids = Symbol('ids');
 const _logicDelete = Symbol('logicDelete');
 
-const emptyString = (source: any, dealEmptyString = true): boolean => {
-  return (
-    source === null ||
-    source === undefined ||
-    (dealEmptyString === true && (source === '' || `${ source }`.replace(/\s/g, '') === ''))
-  );
-};
-const notEmptyString = (source: any, dealEmptyString = true): boolean => {
-  return emptyString(source, dealEmptyString) === false;
-};
 const throwIf = (test: boolean, message: string) => {
   if (test === true) {
     throw new Error(message);
@@ -28,9 +18,15 @@ const throwIfNot = (test: boolean, message: string) => {
 interface SQLManConfig {
   sqlDir?: string;
   maxDeal?: number;
+  defOption: {
+    skipUndefined: boolean;
+    skipNull: boolean;
+    skipEmptyString: boolean;
+  };
 }
 interface DbOption {
-  skipNullUndefined?: boolean;
+  skipUndefined?: boolean;
+  skipNull?: boolean;
   skipEmptyString?: boolean;
   tableName?: (serviceTableName: string) => string;
 }
@@ -66,7 +62,12 @@ class SqlCache {
 }
 
 const config = {
-  maxDeal: 500
+  maxDeal: 500,
+  defOption: {
+    skipUndefined: false,
+    skipNull: false,
+    skipEmptyString: false
+  }
 } as SQLManConfig;
 const defCacheName = 'DEF_SQL_MAN_CACHE';
 const sqlCaches: {[name: string]: SqlCache} = {};
@@ -104,14 +105,14 @@ function defOption() {
         args[i] = undefined;
       }
       if (args[length - 1]) {
-        if (args[length - 1].skipNullUndefined === undefined) {
-          args[length - 1].skipNullUndefined = false;
+        if (args[length - 1].skipUndefined === undefined) {
+          args[length - 1].skipUndefined = config.defOption.skipUndefined;
         }
         if (args[length - 1].skipEmptyString === undefined) {
-          args[length - 1].skipEmptyString = false;
+          args[length - 1].skipEmptyString = config.defOption.skipEmptyString;
         }
-        if (args[length - 1].skipEmptyString === true) {
-          args[length - 1].skipNullUndefined = true;
+        if (args[length - 1].skipNull === undefined) {
+          args[length - 1].skipNull = config.defOption.skipNull;
         }
         if (args[length - 1].tableName === undefined) {
           args[length - 1].tableName = (serviceTable: string) => serviceTable;
@@ -396,6 +397,10 @@ class LambdaQuery<T> {
       params: this.param
     };
   }
+  one(...columns: (keyof T)[]): PrepareSql {
+    this.limit(0, 1);
+    return this.select(...columns);
+  }
   count(): PrepareSql {
     let sql = `SELECT COUNT(1) FROM ${ this.table } `;
     sql += `WHERE 1 = 1 ${ this.where() } `;
@@ -521,7 +526,7 @@ class LambdaQuery<T> {
   }
 }
 
-class SqlMan<T> {
+class SqlServer<T> {
   private tableName: string;
   private idNames: (keyof T)[];
   private keys: (keyof T)[];
@@ -548,11 +553,11 @@ class SqlMan<T> {
    * 插入
    * @param {{[P in keyof T]?: T[P]}} data
    * @param {DbOption} [option]
-   * @memberof SqlMan
+   * @memberof SqlServer
    */
   @defOption()
   insert(data: {[P in keyof T]?: T[P]}, option?: DbOption): PrepareSql {
-    data = this.filterEmptyAndTransient(data, option!.skipNullUndefined, option!.skipNullUndefined);
+    data = this.filterEmptyAndTransient(data, option!);
     const keys = Object.keys(data);
 
     const sql = [
@@ -573,12 +578,12 @@ class SqlMan<T> {
    * @param {{[P in keyof T]?: T[P]}} data
    * @param {(keyof T)[]} columns
    * @param {DbOption} [option]
-   * @memberof SqlMan
+   * @memberof SqlServer
    */
   @defOption()
   insertIfNotExists(data: {[P in keyof T]?: T[P]}, columns: (keyof T)[], option?: DbOption): PrepareSql {
     const tableName = option!.tableName!(this.tableName);
-    data = this.filterEmptyAndTransient(data, option!.skipNullUndefined, option!.skipNullUndefined);
+    data = this.filterEmptyAndTransient(data, option!);
     const keys = Object.keys(data);
 
     const sql = [
@@ -603,11 +608,11 @@ class SqlMan<T> {
    * 插入或替换(按唯一约束判断且先删除再插入,因此性能较低于insertIfNotExists)
    * @param {{[P in keyof T]?: T[P]}} data
    * @param {DbOption} [option]
-   * @memberof SqlMan
+   * @memberof SqlServer
    */
   @defOption()
   replace(data: {[P in keyof T]?: T[P]}, option?: DbOption): PrepareSql {
-    data = this.filterEmptyAndTransient(data, option!.skipNullUndefined, option!.skipNullUndefined);
+    data = this.filterEmptyAndTransient(data, option!);
     const keys = Object.keys(data);
 
     const sql = [
@@ -627,7 +632,7 @@ class SqlMan<T> {
    * 批量插入
    * @param {{[P in keyof T]?: T[P]}[]} datas
    * @param {DbOption} [option]
-   * @memberof SqlMan
+   * @memberof SqlServer
    */
   @defOption()
   insertBatch(datas: {[P in keyof T]?: T[P]}[], option?: DbOption): PrepareSql[] {
@@ -643,7 +648,7 @@ class SqlMan<T> {
     const keyStr = keys.join(',');
 
     for (let i = 0; i < length; i++) {
-      const target = this.filterEmptyAndTransients(datas.slice(i * config.maxDeal!, (i + 1) * config.maxDeal!), option!.skipNullUndefined, option!.skipNullUndefined);
+      const target = this.filterEmptyAndTransients(datas.slice(i * config.maxDeal!, (i + 1) * config.maxDeal!), option!);
 
       const sql = [
         start,
@@ -666,7 +671,7 @@ class SqlMan<T> {
    * @param {{[P in keyof T]?: T[P]}} data
    * @param {(keyof T)[]} columns
    * @param {DbOption} [option]
-   * @memberof SqlMan
+   * @memberof SqlServer
    */
   @defOption()
   insertBatchIfNotExists(datas: {[P in keyof T]?: T[P]}[], columns: (keyof T)[], option?: DbOption): PrepareSql[] {
@@ -687,7 +692,7 @@ class SqlMan<T> {
     const start = `INSERT INTO ${ tableName } ( ${ keys.join(',') } )`;
 
     for (let i = 0; i < length; i++) {
-      const target = this.filterEmptyAndTransients(datas.slice(i * config.maxDeal!, (i + 1) * config.maxDeal!), option!.skipNullUndefined, option!.skipNullUndefined);
+      const target = this.filterEmptyAndTransients(datas.slice(i * config.maxDeal!, (i + 1) * config.maxDeal!), option!);
 
       const sql = [
         start,
@@ -711,7 +716,7 @@ class SqlMan<T> {
    * 批量进行：插入或替换(按唯一约束判断且先删除再插入,因此性能较低于insertIfNotExists)
    * @param {{[P in keyof T]?: T[P]}[]} datas
    * @param {DbOption} [option]
-   * @memberof SqlMan
+   * @memberof SqlServer
    */
   @defOption()
   replaceBatch(datas: {[P in keyof T]?: T[P]}[], option?: DbOption): PrepareSql[] {
@@ -727,7 +732,7 @@ class SqlMan<T> {
     const keyStr = keys.join(',');
 
     for (let i = 0; i < length; i++) {
-      const target = this.filterEmptyAndTransients(datas.slice(i * config.maxDeal!, (i + 1) * config.maxDeal!), option!.skipNullUndefined, option!.skipNullUndefined);
+      const target = this.filterEmptyAndTransients(datas.slice(i * config.maxDeal!, (i + 1) * config.maxDeal!), option!);
 
       const sql = [
         start,
@@ -750,7 +755,7 @@ class SqlMan<T> {
    * 根据主键修改
    * @param {{[P in keyof T]?: T[P]}} data
    * @param {DbOption} [option]
-   * @memberof SqlMan
+   * @memberof SqlServer
    */
   @defOption()
   updateById(data: {[P in keyof T]?: T[P]}, option?: DbOption): PrepareSql {
@@ -759,7 +764,7 @@ class SqlMan<T> {
       throwIf(!data[idName], `id must be set!${ this.tableName }`);
       where[idName] = data[idName];
     }
-    data = this.filterEmptyAndTransient(data, option!.skipNullUndefined, option!.skipNullUndefined);
+    data = this.filterEmptyAndTransient(data, option!);
     const keys = Object.keys(data);
 
     const sql = [
@@ -783,7 +788,7 @@ class SqlMan<T> {
    * 根据主键 批量修改
    * @param {{[P in keyof T]?: T[P]}[]} datas
    * @param {DbOption} [option]
-   * @memberof SqlMan
+   * @memberof SqlServer
    */
   @defOption()
   updateBatchById(datas: {[P in keyof T]?: T[P]}[], option?: DbOption): PrepareSql[] {
@@ -799,7 +804,7 @@ class SqlMan<T> {
     const caseStr = `WHEN ${ this.idNames.flatMap(item => `${ item } = ?`).join(' AND ') } THEN ?`;
 
     for (let i = 0; i < length; i++) {
-      const target = this.filterEmptyAndTransients(datas.slice(i * config.maxDeal!, (i + 1) * config.maxDeal!), option!.skipNullUndefined, option!.skipNullUndefined);
+      const target = this.filterEmptyAndTransients(datas.slice(i * config.maxDeal!, (i + 1) * config.maxDeal!), option!);
       const realLengt = target.length;
       const params = new Array<any>();
       const sql = [
@@ -832,11 +837,11 @@ class SqlMan<T> {
    * @param {{[P in keyof T]?: T[P]}} data
    * @param {{[P in keyof T]?: T[P]}} where
    * @param {DbOption} [option]
-   * @memberof SqlMan
+   * @memberof SqlServer
    */
   @defOption()
   updateBatch(data: {[P in keyof T]?: T[P]}, where: {[P in keyof T]?: T[P]}, option?: DbOption): PrepareSql {
-    const realData = this.filterEmptyAndTransient(data, option!.skipNullUndefined, option!.skipNullUndefined);
+    const realData = this.filterEmptyAndTransient(data, option!);
 
     const sql = [
       `UPDATE ${ option!.tableName!(this.tableName) } SET `,
@@ -856,7 +861,7 @@ class SqlMan<T> {
    * 根据条件删除
    * @param {{[P in keyof T]?: T[P]}} where
    * @param {DbOption} [option]
-   * @memberof SqlMan
+   * @memberof SqlServer
    */
   @defOption()
   deleteBatch(where: {[P in keyof T]?: T[P]}, option?: DbOption): PrepareSql {
@@ -877,7 +882,7 @@ class SqlMan<T> {
    * 如果设置了逻辑删除,那么这里是一个update而不是delete
    * @param {*} id
    * @param {DbOption} [option]
-   * @memberof SqlMan
+   * @memberof SqlServer
    */
   @defOption()
   deleteById(id: any, option?: DbOption): PrepareSql {
@@ -917,7 +922,7 @@ class SqlMan<T> {
    * 根据多个主键删除
    * @param {{[P in keyof T]?: T[P]}} data
    * @param {DbOption} [option]
-   * @memberof SqlMan
+   * @memberof SqlServer
    */
   @defOption()
   deleteByIdMuti(data: {[P in keyof T]?: T[P]}, option?: DbOption): PrepareSql {
@@ -954,7 +959,7 @@ class SqlMan<T> {
    * 根据主键查询
    * @param {*} id
    * @param {DbOption} [option]
-   * @memberof SqlMan
+   * @memberof SqlServer
    */
   @defOption()
   selectById(id: any, option?: DbOption): PrepareSql {
@@ -980,7 +985,7 @@ class SqlMan<T> {
    * 根据主键查询：多重主键
    * @param {{[P in keyof T]?: T[P]}} data
    * @param {DbOption} [option]
-   * @memberof SqlMan
+   * @memberof SqlServer
    */
   @defOption()
   selectByIdMuti(data: {[P in keyof T]?: T[P]}, option?: DbOption): PrepareSql {
@@ -1004,7 +1009,7 @@ class SqlMan<T> {
   /**
    * 查询全部
    * @param {DbOption} [option]
-   * @memberof SqlMan
+   * @memberof SqlServer
    */
   @defOption()
   all(option?: DbOption): PrepareSql {
@@ -1025,7 +1030,7 @@ class SqlMan<T> {
    * @param {number} start
    * @param {number} size
    * @param {DbOption} [option]
-   * @memberof SqlMan
+   * @memberof SqlServer
    */
   @defOption()
   allPage(start: number, size: number, option?: DbOption): PrepareSql {
@@ -1047,7 +1052,7 @@ class SqlMan<T> {
   /**
    * 返回总条数
    * @param {DbOption} [option]
-   * @memberof SqlMan
+   * @memberof SqlServer
    */
   @defOption()
   allCount(option?: DbOption): PrepareSql {
@@ -1065,7 +1070,7 @@ class SqlMan<T> {
    * 根据模版查询所有数据,仅支持 = 操作符
    * @param {{[P in keyof T]?: T[P]}} where
    * @param {DbOption} [option]
-   * @memberof SqlMan
+   * @memberof SqlServer
    */
   @defOption()
   template(where: {[P in keyof T]?: T[P]}, option?: DbOption): PrepareSql {
@@ -1087,7 +1092,7 @@ class SqlMan<T> {
    * 根据模版查询一条数据,仅支持 = 操作符
    * @param {{[P in keyof T]?: T[P]}} where
    * @param {DbOption} [option]
-   * @memberof SqlMan
+   * @memberof SqlServer
    */
   @defOption()
   templateOne(where: {[P in keyof T]?: T[P]}, option?: DbOption): PrepareSql {
@@ -1112,7 +1117,7 @@ class SqlMan<T> {
    * @param {number} start
    * @param {number} size
    * @param {DbOption} [option]
-   * @memberof SqlMan
+   * @memberof SqlServer
    */
   @defOption()
   templatePage(where: {[P in keyof T]?: T[P]}, start: number, size: number, option?: DbOption): PrepareSql {
@@ -1137,7 +1142,7 @@ class SqlMan<T> {
    * 根据模版查询条数,仅支持 = 操作符
    * @param {{[P in keyof T]?: T[P]}} where
    * @param {DbOption} [option]
-   * @memberof SqlMan
+   * @memberof SqlServer
    */
   @defOption()
   templateCount(where: {[P in keyof T]?: T[P]}, option?: DbOption): PrepareSql {
@@ -1163,7 +1168,7 @@ class SqlMan<T> {
    *     orders?: [keyof T, 'asc' | 'desc'][];
    *   })} x
    * @param {DbOption} [option]
-   * @memberof SqlMan
+   * @memberof SqlServer
    */
   @defOption()
   customQuery(x: {
@@ -1198,7 +1203,7 @@ class SqlMan<T> {
    * 创建分页查询工具
    * @param {string} sqlid
    * @returns {PageQuery<T>}
-   * @memberof SqlMan
+   * @memberof SqlServer
    */
   pageQuery(sqlid: string): PageQuery {
     return new PageQuery(getSqlCache(this.sqlCacheName).loadSqlSourceFnById(sqlid));
@@ -1208,7 +1213,7 @@ class SqlMan<T> {
    * @template L
    * @param {DbOption} [option]
    * @returns {LambdaQuery<L>}
-   * @memberof SqlMan
+   * @memberof SqlServer
    */
   @defOption()
   lambdaQuery<L>(option?: DbOption): LambdaQuery<L> {
@@ -1218,11 +1223,11 @@ class SqlMan<T> {
    * 创建lambda查询工具
    * @param {DbOption} [option]
    * @returns {LambdaQuery<T>}
-   * @memberof SqlMan
+   * @memberof SqlServer
    */
   @defOption()
   lambdaQueryMe(option?: DbOption): LambdaQuery<T> {
-    return this.lambdaQuery<T>(option);
+    return new LambdaQuery<T>(option!.tableName!(this.tableName));
   }
 
   /**
@@ -1232,14 +1237,19 @@ class SqlMan<T> {
    * @param {*} source
    * @returns {T}
    */
-  private filterEmptyAndTransient(source: any, skipEmpty = true, dealEmptyString = true): {[P in keyof T]?: T[P]} {
+  private filterEmptyAndTransient(source: any, option: DbOption): {[P in keyof T]?: T[P]} {
     const result: {[P in keyof T]?: T[P]} = {};
     this.keys.forEach((key) => {
-      if (skipEmpty === true) {
-        if (notEmptyString(source[key], dealEmptyString)) {
-          result[key] = source[key];
+      if (source.hasOwnProperty(key)) {
+        if (option.skipNull === true && source[key] === null) {
+          return;
         }
-      } else {
+        if (option.skipUndefined === true && source[key] === undefined) {
+          return;
+        }
+        if (option.skipEmptyString === true && `${ source[key] }`.replace(/\s/g, '') === '') {
+          return;
+        }
         result[key] = source[key];
       }
     });
@@ -1253,20 +1263,20 @@ class SqlMan<T> {
    * @param {*} source
    * @returns {T}
    */
-  private filterEmptyAndTransients(source: any[], skipEmpty = true, dealEmptyString = true): {[P in keyof T]?: T[P]}[] {
+  private filterEmptyAndTransients(source: any[], option: DbOption): {[P in keyof T]?: T[P]}[] {
     const result = new Array<{[P in keyof T]?: T[P]}>();
     source.forEach((item) => {
-      result.push(this.filterEmptyAndTransient(item, skipEmpty, dealEmptyString));
+      result.push(this.filterEmptyAndTransient(item, option));
     });
     return result;
   }
 }
 /** 公共的对象缓存 */
-const cache: {[key: string]: SqlMan<any>} = {};
-export const sqlMan = function <T>(classtype: any): SqlMan<T> {
+const cache: {[key: string]: SqlServer<any>} = {};
+export const getSqlServer = function <T>(classtype: any): SqlServer<T> {
   const key = classtype.toString();
   if (!cache[key]) {
-    cache[key] = new SqlMan<T>(classtype);
+    cache[key] = new SqlServer<T>(classtype);
   }
   return cache[key];
 };

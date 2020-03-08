@@ -6,9 +6,11 @@ declare namespace SqlMan {
   }
   /** 配置选项 */
   interface DbOption {
-    /** 跳过null、undefined字段,默认为false */
-    skipNullUndefined?: boolean;
-    /** 跳过空字符串,默认为false,当设置为true时,skipNullUndefined也将被设置为true */
+    /** 跳过undefined字段,默认为false */
+    skipUndefined?: boolean;
+    /** 跳过null字段,默认为false */
+    skipNull?: boolean;
+    /** 跳过空字符串,默认为false */
     skipEmptyString?: boolean;
     /** 返回本次操作的表名,常用于分表操作;参数是DbConfig中配置的tableName;默认使用DbConfig中配置的tableName */
     tableName?: (serviceTableName: string) => string;
@@ -93,12 +95,12 @@ declare namespace SqlMan {
     delete(): PrepareSql;
   }
   /** 预处理sql类 */
-  class SqlMan<T> {
+  class SqlServer<T> {
     /**
      * 插入
      * @param {{[P in keyof T]?: T[P]}} data
      * @param {DbOption} [option]
-     * @memberof SqlMan
+     * @memberof SqlServer
      */
     insert(data: {[P in keyof T]?: T[P];}, option?: DbOption): PrepareSql;
     /**
@@ -106,21 +108,21 @@ declare namespace SqlMan {
      * @param {{[P in keyof T]?: T[P]}} data
      * @param {(keyof T)[]} columns
      * @param {DbOption} [option]
-     * @memberof SqlMan
+     * @memberof SqlServer
      */
     insertIfNotExists(data: {[P in keyof T]?: T[P];}, columns: (keyof T)[], option?: DbOption): PrepareSql;
     /**
      * 插入或替换(按唯一约束判断且先删除再插入,因此性能较低于insertIfNotExists)
      * @param {{[P in keyof T]?: T[P]}} data
      * @param {DbOption} [option]
-     * @memberof SqlMan
+     * @memberof SqlServer
      */
     replace(data: {[P in keyof T]?: T[P];}, option?: DbOption): PrepareSql;
     /**
      * 批量插入
      * @param {{[P in keyof T]?: T[P]}[]} datas
      * @param {DbOption} [option]
-     * @memberof SqlMan
+     * @memberof SqlServer
      */
     insertBatch(datas: {[P in keyof T]?: T[P];}[], option?: DbOption): PrepareSql[];
     /**
@@ -128,28 +130,28 @@ declare namespace SqlMan {
      * @param {{[P in keyof T]?: T[P]}} data
      * @param {(keyof T)[]} columns
      * @param {DbOption} [option]
-     * @memberof SqlMan
+     * @memberof SqlServer
      */
     insertBatchIfNotExists(datas: {[P in keyof T]?: T[P];}[], columns: (keyof T)[], option?: DbOption): PrepareSql[];
     /**
      * 批量进行：插入或替换(按唯一约束判断且先删除再插入,因此性能较低于insertIfNotExists)
      * @param {{[P in keyof T]?: T[P]}[]} datas
      * @param {DbOption} [option]
-     * @memberof SqlMan
+     * @memberof SqlServer
      */
     replaceBatch(datas: {[P in keyof T]?: T[P];}[], option?: DbOption): PrepareSql[];
     /**
      * 根据主键修改
      * @param {{[P in keyof T]?: T[P]}} data
      * @param {DbOption} [option]
-     * @memberof SqlMan
+     * @memberof SqlServer
      */
     updateById(data: {[P in keyof T]?: T[P];}, option?: DbOption): PrepareSql;
     /**
      * 根据主键 批量修改
      * @param {{[P in keyof T]?: T[P]}[]} datas
      * @param {DbOption} [option]
-     * @memberof SqlMan
+     * @memberof SqlServer
      */
     updateBatchById(datas: {[P in keyof T]?: T[P];}[], option?: DbOption): PrepareSql[];
     /**
@@ -157,14 +159,14 @@ declare namespace SqlMan {
      * @param {{[P in keyof T]?: T[P]}} data
      * @param {{[P in keyof T]?: T[P]}} where
      * @param {DbOption} [option]
-     * @memberof SqlMan
+     * @memberof SqlServer
      */
     updateBatch(data: {[P in keyof T]?: T[P];}, where: {[P in keyof T]?: T[P];}, option?: DbOption): PrepareSql;
     /**
      * 根据条件删除
      * @param {{[P in keyof T]?: T[P]}} where
      * @param {DbOption} [option]
-     * @memberof SqlMan
+     * @memberof SqlServer
      */
     deleteBatch(where: {[P in keyof T]?: T[P];}, option?: DbOption): PrepareSql;
     /**
@@ -172,34 +174,34 @@ declare namespace SqlMan {
      * 如果设置了逻辑删除,那么这里是一个update而不是delete
      * @param {*} id
      * @param {DbOption} [option]
-     * @memberof SqlMan
+     * @memberof SqlServer
      */
     deleteById(id: any, option?: DbOption): PrepareSql;
     /**
      * 根据多个主键删除
      * @param {{[P in keyof T]?: T[P]}} data
      * @param {DbOption} [option]
-     * @memberof SqlMan
+     * @memberof SqlServer
      */
     deleteByIdMuti(data: {[P in keyof T]?: T[P];}, option?: DbOption): PrepareSql;
     /**
      * 根据主键查询
      * @param {*} id
      * @param {DbOption} [option]
-     * @memberof SqlMan
+     * @memberof SqlServer
      */
     selectById(id: any, option?: DbOption): PrepareSql;
     /**
      * 根据主键查询：多重主键
      * @param {{[P in keyof T]?: T[P]}} data
      * @param {DbOption} [option]
-     * @memberof SqlMan
+     * @memberof SqlServer
      */
     selectByIdMuti(data: {[P in keyof T]?: T[P];}, option?: DbOption): PrepareSql;
     /**
      * 查询全部
      * @param {DbOption} [option]
-     * @memberof SqlMan
+     * @memberof SqlServer
      */
     all(option?: DbOption): PrepareSql;
     /**
@@ -207,27 +209,27 @@ declare namespace SqlMan {
      * @param {number} start
      * @param {number} size
      * @param {DbOption} [option]
-     * @memberof SqlMan
+     * @memberof SqlServer
      */
     allPage(start: number, size: number, option?: DbOption): PrepareSql;
     /**
      * 返回总条数
      * @param {DbOption} [option]
-     * @memberof SqlMan
+     * @memberof SqlServer
      */
     allCount(option?: DbOption): PrepareSql;
     /**
      * 根据模版查询所有数据,仅支持 = 操作符
      * @param {{[P in keyof T]?: T[P]}} where
      * @param {DbOption} [option]
-     * @memberof SqlMan
+     * @memberof SqlServer
      */
     template(where: {[P in keyof T]?: T[P];}, option?: DbOption): PrepareSql;
     /**
      * 根据模版查询一条数据,仅支持 = 操作符
      * @param {{[P in keyof T]?: T[P]}} where
      * @param {DbOption} [option]
-     * @memberof SqlMan
+     * @memberof SqlServer
      */
     templateOne(where: {[P in keyof T]?: T[P];}, option?: DbOption): PrepareSql;
     /**
@@ -236,28 +238,28 @@ declare namespace SqlMan {
      * @param {number} start
      * @param {number} size
      * @param {DbOption} [option]
-     * @memberof SqlMan
+     * @memberof SqlServer
      */
     templatePage(where: {[P in keyof T]?: T[P];}, start: number, size: number, option?: DbOption): PrepareSql;
     /**
      * 根据模版查询条数,仅支持 = 操作符
      * @param {{[P in keyof T]?: T[P]}} where
      * @param {DbOption} [option]
-     * @memberof SqlMan
+     * @memberof SqlServer
      */
     templateCount(where: {[P in keyof T]?: T[P];}, option?: DbOption): PrepareSql;
     /**
      * 简单自定义查询
      * @param  x
      * @param {DbOption} [option]
-     * @memberof SqlMan
+     * @memberof SqlServer
     */
     customQuery(x: {where?: {[P in keyof T]?: T[P];}; columns?: (keyof T)[]; startRow?: number; pageSize?: number; orders?: [keyof T, "asc" | "desc"][]}, option?: DbOption): PrepareSql;
     /**
      * 创建分页查询工具
      * @param {string} sqlid
      * @returns {PageQuery<T>}
-     * @memberof SqlMan
+     * @memberof SqlServer
      */
     pageQuery(sqlid: string): PageQuery;
     /**
@@ -265,14 +267,14 @@ declare namespace SqlMan {
      * @template L
      * @param {DbOption} [option]
      * @returns {LambdaQuery<L>}
-     * @memberof SqlMan
+     * @memberof SqlServer
      */
     lambdaQuery<L>(option?: DbOption): LambdaQuery<L>;
     /**
      * 创建lambda查询工具
      * @param {DbOption} [option]
      * @returns {LambdaQuery<T>}
-     * @memberof SqlMan
+     * @memberof SqlServer
      */
     lambdaQueryMe(option?: DbOption): LambdaQuery<T>;
   }
@@ -306,9 +308,9 @@ declare namespace SqlMan {
    * console.log(pre.params);
    * @template T
    * @param {*} classtype
-   * @returns {SqlMan<T>}
+   * @returns {SqlServer<T>}
    */
-  function sqlMan<T>(classtype: any): SqlMan<T>;
+  function getSqlServer<T>(classtype: any): SqlServer<T>;
   /**
    * 建立一个新的sql语句缓存集
    * 该缓存集会加载到内存中,之后可通过name获取到此缓存集
