@@ -13,9 +13,9 @@ module.exports = {
   maxDeal: 500,
   // 数据处理的默认选项,如果不在这里设置此参数,那么实例里写的就是每次执行的默认配置
   defOption: {
-    skipUndefined: false,
-    skipNull: false,
-    skipEmptyString: false
+    skipUndefined: true,
+    skipNull: true,
+    skipEmptyString: true
   }
 };
 ```
@@ -23,7 +23,9 @@ module.exports = {
 sql 文件其实是一个 js/ts 文件,导出返回 sql 的函数：
 
 ```
-export const select_list = (param: {[key:string]:any}) => {
+// 第一个参数是用来渲染sql、传递到数据库引擎中的，第二个参数是可选的，用来标记本次查询是查询记录数还是全部记录的？
+
+export const select_list = (param: {[key:string]:any}, isCountQuery?: boolean) => {
   return `SELECT * FROM name`;
 };
 ```
@@ -33,6 +35,8 @@ export const select_list = (param: {[key:string]:any}) => {
 ### SqlServer
 
 > sql 辅助
+
+#### 文档
 
 | 方法名                 | 说明                                        |
 | ---------------------- | ------------------------------------------- |
@@ -62,15 +66,86 @@ export const select_list = (param: {[key:string]:any}) => {
 | lambdaQuery            | 创建 lambda 方式查询,匹配的类可以自定义     |
 | lambdaQueryMe          | 创建 lambda 方式查询,匹配的类是自己绑定的类 |
 
-#### PageQuery
+#### 实例
 
-> 分页查询
+### PageQuery
 
-#### LambdaQuery
+> 分页查询,由`sqlid`加载而来
+
+#### 文档
+
+| 方法名     | 说明                                                   |
+| ---------- | ------------------------------------------------------ |
+| param      | 设置查询使用的参数                                     |
+| params     | 设置查询使用的参数                                     |
+| orderBy    | 追加排序字段                                           |
+| pageNumber | 设置当前第几页                                         |
+| pageSize   | 设置每页多少条                                         |
+| limitSelf  | 设置是否自动追加分页语句?否则需要在 sql 语句中自己实现 |
+| list       | 返回查询记录的 sql 语句                                |
+| count      | 返回查询记录的 sql 语句                                |
+
+#### 实例
+
+### LambdaQuery
 
 > Lambda 查询,支持多个 LambdaQuery 对象组合,支持任意查询条件.支持查询列表、单条记录、条数、修改、删除操作
 
-#### SqlCache
+#### 通过以下方法可以设置查询条件,参数都是 字段名，值
+
+| 方法名          | 说明 |
+| --------------- | ---- |
+| andEq           |      |
+| andNotEq        |      |
+| andGreat        |      |
+| andLess         |      |
+| andLessEq       |      |
+| andLike         |      |
+| andNotLike      |      |
+| andLeftLike     |      |
+| andNotLeftLike  |      |
+| andRightLike    |      |
+| andNotRightLike |      |
+| andIsNull       |      |
+| andIsNotNull    |      |
+| andIn           |      |
+| andNotIn        |      |
+| andBetween      |      |
+| andNotBetween   |      |
+| groupBy         |      |
+
+#### 通过以下方法可以设置排序、分组、分页
+
+| 方法名  | 说明 |
+| ------- | ---- |
+| desc    |      |
+| asc     |      |
+| groupBy |      |
+| limit   |      |
+
+#### 通过以下方法可以设置排序、分组、分页
+
+| 方法名       | 说明                                       |
+| ------------ | ------------------------------------------ |
+| updateColumn | 如果要更新的话，这里可以设置更新的列、内容 |
+
+#### 通过以下方法可以合并另一个 LambdaQuery 的条件
+
+| and | 以 and 的方式合并另一个 LambdaQuery 的条件 |
+| or | 以 or 的方式合并另一个 LambdaQuery 的条件 |
+
+#### 以下方法将终结链条
+
+| where | 返回当前设置的条件 |
+| select | 返回查询语句 |
+| one | 返回单条查询语句 |
+| count | 返回查询记录数的 语句 |
+| update | 返回更新语句 |
+| delete | 返回删除语句 |
+
+#### 实例
+
+### SqlCache
 
 > sql 语句缓存集
 

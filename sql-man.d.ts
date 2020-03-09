@@ -61,7 +61,6 @@ declare namespace SqlMan {
   }
   /** Lambda */
   class LambdaQuery<T> {
-    constructor (table: string);
     and(lambda: LambdaQuery<T>): this;
     or(lambda: LambdaQuery<T>): this;
     andEq(key: keyof T, value: T[keyof T]): this;

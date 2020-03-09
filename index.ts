@@ -64,9 +64,10 @@ class SqlCache {
 const config = {
   maxDeal: 500,
   defOption: {
-    skipUndefined: false,
-    skipNull: false,
-    skipEmptyString: false
+    skipUndefined: true,
+    skipNull: true,
+    skipEmptyString: true,
+    tableName: (serviceTable: string) => serviceTable
   }
 } as SQLManConfig;
 const defCacheName = 'DEF_SQL_MAN_CACHE';
@@ -104,26 +105,7 @@ function defOption() {
       for (let i = args.length; i < length; i++) {
         args[i] = undefined;
       }
-      if (args[length - 1]) {
-        if (args[length - 1].skipUndefined === undefined) {
-          args[length - 1].skipUndefined = config.defOption.skipUndefined;
-        }
-        if (args[length - 1].skipEmptyString === undefined) {
-          args[length - 1].skipEmptyString = config.defOption.skipEmptyString;
-        }
-        if (args[length - 1].skipNull === undefined) {
-          args[length - 1].skipNull = config.defOption.skipNull;
-        }
-        if (args[length - 1].tableName === undefined) {
-          args[length - 1].tableName = (serviceTable: string) => serviceTable;
-        }
-      } else {
-        args[length - 1] = {
-          skipNullUndefined: false,
-          skipEmptyString: false,
-          tableName: (serviceTable: string) => serviceTable
-        };
-      }
+      args[length - 1] = Object.assign({}, config.defOption, args[length - 1]);
       return fn.call(this, ...args);
     };
   };
