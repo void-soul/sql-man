@@ -131,17 +131,21 @@ export const select_list = (param: {[key:string]:any}, isCountQuery?: boolean) =
 
 #### 通过以下方法可以合并另一个 LambdaQuery 的条件
 
-| and | 以 and 的方式合并另一个 LambdaQuery 的条件 |
-| or | 以 or 的方式合并另一个 LambdaQuery 的条件 |
+| 方法名 | 说明                                       |
+| ------ | ------------------------------------------ |
+| and    | 以 and 的方式合并另一个 LambdaQuery 的条件 |
+| or     | 以 or 的方式合并另一个 LambdaQuery 的条件  |
 
 #### 以下方法将终结链条
 
-| where | 返回当前设置的条件 |
-| select | 返回查询语句 |
-| one | 返回单条查询语句 |
-| count | 返回查询记录数的 语句 |
-| update | 返回更新语句 |
-| delete | 返回删除语句 |
+| 方法名 | 说明                  |
+| ------ | --------------------- |
+| where  | 返回当前设置的条件    |
+| select | 返回查询语句          |
+| one    | 返回单条查询语句      |
+| count  | 返回查询记录数的 语句 |
+| update | 返回更新语句          |
+| delete | 返回删除语句          |
 
 #### 实例
 
